@@ -1,0 +1,55 @@
+Github Project
+
+
+# snapshot-manager.ps1
+
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$vCenter,
+
+    [Parameter(Mandatory=$false)]
+    [int]$DaysToKeep = 7
+)
+
+# Import PowerCLI module
+Import-Module VMware.PowerCLI -ErrorAction Stop
+
+# Connect to vCenter
+Write-Host "Connecting to vCenter Server: $vCenter..."
+Connect-VIServer -Server $vCenter
+
+# Get current date
+$CurrentDate = Get-Date
+
+# Get all VMs
+$VMs = Get-VM
+
+# Log file
+$LogFile = "snapshot-log.txt"
+
+"========== VMware Snapshot Manager Log - $CurrentDate ==========" | Out-File -Append $LogFile
+
+foreach ($vm in $VMs) {
+    $snapshots = Get-Snapshot -VM $vm -ErrorAction SilentlyContinue
+
+    foreach ($snap in $snapshots) {
+        $snapAge = ($CurrentDate - $snap.Created).Days
+
+        if ($snapAge -gt $DaysToKeep) {
+            Write-Host "Removing old snapshot: $($snap.Name) from VM: $($vm.Name)" -ForegroundColor Yellow
+            Remove-Snapshot -Snapshot $snap -Confirm:$false
+            "Removed snapshot '$($snap.Name)' from VM '$($vm.Name)' (Age: $snapAge days)" | Out-File -Append $LogFile
+        }
+    }
+
+    # Create new snapshot
+    $snapshotName = "AutoSnap-$($CurrentDate.ToString('yyyyMMdd-HHmmss'))"
+    New-Snapshot -VM $vm -Name $snapshotName -Description "Auto snapshot via script" -Quiesce:$false -Memory:$false
+    "Created snapshot '$snapshotName' for VM '$($vm.Name)'" | Out-File -Append $LogFile
+}
+
+# Disconnect
+Disconnect-VIServer -Confirm:$false
+
+"Script execution completed on $CurrentDate.`n" | Out-File -Append $LogFile
+Write-Host "✅ Snapshot management completed. Logs written to $LogFile." -ForegroundColor Green
